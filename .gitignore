@@ -3,3 +3,4 @@ obj/*
 .vs
 notes.txt
 /.zig-cache
+/zig-out

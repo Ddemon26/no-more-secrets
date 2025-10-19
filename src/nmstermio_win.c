@@ -29,8 +29,15 @@ static int cursorHidden = 0;
 
 static void ensure_handles(void);
 static void clear_console(void);
-static void write_utf8(const char *s);
+static void append_utf8(const char *s);
+static void flush_frame(void);
+static void write_utf8_direct(const char *s, WORD attributes);
 static WORD map_color(int color);
+static void reset_frame_buffer(void);
+
+static wchar_t *frame_buffer = NULL;
+static size_t frame_length = 0;
+static size_t frame_capacity = 0;
 
 static void ensure_handles(void)
 {
@@ -46,6 +53,7 @@ static void ensure_handles(void)
 
 static void clear_console(void)
 {
+	flush_frame();
 	CONSOLE_SCREEN_BUFFER_INFO info;
 	DWORD written;
 	COORD origin = {0, 0};
@@ -60,7 +68,35 @@ static void clear_console(void)
 	SetConsoleCursorPosition(hOut, origin);
 }
 
-static void write_utf8(const char *s)
+static void reset_frame_buffer(void)
+{
+	frame_length = 0;
+}
+
+static void ensure_capacity(size_t need)
+{
+	if (need <= frame_capacity)
+	{
+		return;
+	}
+
+	size_t new_capacity = frame_capacity ? frame_capacity : 1024;
+	while (new_capacity < need)
+	{
+		new_capacity *= 2;
+	}
+
+	wchar_t *tmp = realloc(frame_buffer, new_capacity * sizeof(wchar_t));
+	if (tmp == NULL)
+	{
+		return;
+	}
+
+	frame_buffer = tmp;
+	frame_capacity = new_capacity;
+}
+
+static void append_utf8(const char *s)
 {
 	if (s == NULL)
 	{
@@ -81,16 +117,64 @@ static void write_utf8(const char *s)
 		return;
 	}
 
-	wchar_t *wbuf = (wchar_t *)malloc((size_t)(wlen + 1) * sizeof(wchar_t));
+	ensure_capacity(frame_length + (size_t)wlen);
+	if (frame_buffer == NULL)
+	{
+		DWORD written = 0;
+		WriteConsoleW(hOut, L"?", 1, &written, NULL);
+		return;
+	}
+
+	MultiByteToWideChar(CP_UTF8, 0, s, (int)len, frame_buffer + frame_length, wlen);
+	frame_length += (size_t)wlen;
+}
+
+static void flush_frame(void)
+{
+	if (frame_length == 0 || frame_buffer == NULL)
+	{
+		return;
+	}
+
+	DWORD written = 0;
+	WriteConsoleW(hOut, frame_buffer, (DWORD)frame_length, &written, NULL);
+	frame_length = 0;
+}
+
+static void write_utf8_direct(const char *s, WORD attributes)
+{
+	if (s == NULL)
+	{
+		return;
+	}
+
+	size_t len = strlen(s);
+	if (len == 0)
+	{
+		return;
+	}
+
+	int wlen = MultiByteToWideChar(CP_UTF8, 0, s, (int)len, NULL, 0);
+	if (wlen <= 0)
+	{
+		DWORD written = 0;
+		SetConsoleTextAttribute(hOut, attributes);
+		WriteConsoleA(hOut, s, (DWORD)len, &written, NULL);
+		return;
+	}
+
+	wchar_t *wbuf = (wchar_t *)malloc((size_t)wlen * sizeof(wchar_t));
 	if (wbuf == NULL)
 	{
 		DWORD written = 0;
+		SetConsoleTextAttribute(hOut, attributes);
 		WriteConsoleA(hOut, s, (DWORD)len, &written, NULL);
 		return;
 	}
 
 	MultiByteToWideChar(CP_UTF8, 0, s, (int)len, wbuf, wlen);
 	DWORD written = 0;
+	SetConsoleTextAttribute(hOut, attributes);
 	WriteConsoleW(hOut, wbuf, (DWORD)wlen, &written, NULL);
 	free(wbuf);
 }
@@ -154,6 +238,8 @@ void nmstermio_init_terminal(void)
 
 	SetConsoleMode(hOut, originalOutMode | ENABLE_PROCESSED_OUTPUT);
 
+	reset_frame_buffer();
+
 	if (clearScr)
 	{
 		clear_console();
@@ -171,6 +257,8 @@ void nmstermio_init_terminal(void)
 void nmstermio_restore_terminal(void)
 {
 	ensure_handles();
+
+	flush_frame();
 
 	if (modesSaved)
 	{
@@ -235,6 +323,7 @@ void nmstermio_move_cursor(int y, int x)
 		return;
 	}
 
+	flush_frame();
 	pos.X = (SHORT)x;
 	if (y <= 0)
 	{
@@ -251,17 +340,20 @@ void nmstermio_move_cursor(int y, int x)
 void nmstermio_print_string(char *s)
 {
 	ensure_handles();
-	write_utf8(s);
+	append_utf8(s);
 }
 
 void nmstermio_refresh(void)
 {
+	flush_frame();
 	fflush(stdout);
 }
 
 void nmstermio_clear_input(void)
 {
 	ensure_handles();
+
+	flush_frame();
 
 	if (hIn != INVALID_HANDLE_VALUE)
 	{
@@ -290,8 +382,8 @@ void nmstermio_print_reveal_string(char *s, int colorOn)
 		target = (defaultAttributes & BG_MASK) | map_color(foregroundColor);
 	}
 
-	SetConsoleTextAttribute(hOut, target);
-	write_utf8(s);
+	flush_frame();
+	write_utf8_direct(s, target);
 	SetConsoleTextAttribute(hOut, defaultAttributes);
 }
 
