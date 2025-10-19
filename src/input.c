@@ -5,80 +5,77 @@
  * under the terms of the GPL License. See LICENSE for more details.
  */
 
+#include <errno.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <ctype.h>
 #include <string.h>
-#include <sys/ioctl.h>
-#include <sys/select.h>
-#include <time.h>
-#include <errno.h>
+#include <unistd.h>
 #include "input.h"
 #include "error.h"
 
-int input_get(unsigned char** dest, char *prompt)
+int input_get(unsigned char **dest, char *prompt)
 {
-	int r, input_len;
-	fd_set input_stream;
-	struct timeval timeout;
-	void *timeout_p;
+	size_t capacity = 0;
+	size_t length = 0;
+	unsigned char *buffer = NULL;
+	int ch;
+	int is_terminal;
 
-	FD_ZERO(&input_stream);
-	input_len = 0;
-
-	timeout.tv_sec  = 10;
-	timeout.tv_usec = 0;
-
-	if (isatty(STDIN_FILENO))
+	if (dest == NULL)
 	{
-		timeout_p = NULL;
-		if (prompt != NULL)
-		{
-			printf("%s", prompt);
-			fflush(stdout);
-		}
-	}
-	else
-	{
-		timeout_p = &timeout;
-	}
-
-	FD_SET(STDIN_FILENO, &input_stream);
-	r = select(FD_SETSIZE, &input_stream, NULL, NULL, timeout_p);
-	if (r < 0)
-	{
-		error_log("Error while waiting for input data. Errno: %i", errno);
+		error_log("Invalid destination buffer.");
 		return -1;
 	}
-	if (r > 0)
+
+	*dest = NULL;
+	is_terminal = isatty(STDIN_FILENO);
+
+	if (is_terminal && prompt != NULL)
 	{
-		r = ioctl(STDIN_FILENO, FIONREAD, &input_len);
-		if (r < 0)
+		printf("%s", prompt);
+		fflush(stdout);
+	}
+
+	while ((ch = fgetc(stdin)) != EOF)
+	{
+		if (capacity - length < 1)
 		{
-			error_log("Could not determine length of input. Errno: %i", errno);
-			return -1;
-		}
-		if (input_len > 0)
-		{
-			*dest = malloc(input_len);
-			if (*dest == NULL)
+			size_t new_capacity = (capacity == 0) ? 256 : capacity * 2;
+			unsigned char *tmp = realloc(buffer, new_capacity);
+			if (tmp == NULL)
 			{
+				free(buffer);
 				error_log("Memory allocation error.");
 				return -1;
 			}
-			r = read(STDIN_FILENO, *dest, input_len);
-			if (r < 0)
-			{
-				error_log("Input read error. Errno: %i", errno);
-				return -1;
-			}
+			buffer = tmp;
+			capacity = new_capacity;
+		}
+
+		buffer[length++] = (unsigned char)ch;
+
+		if (is_terminal && ch == '\n')
+		{
+			break;
 		}
 	}
 
-	FD_CLR(STDIN_FILENO, &input_stream);
+	if (ferror(stdin))
+	{
+		free(buffer);
+		error_log("Input read error. Errno: %i", errno);
+		return -1;
+	}
 
-	return input_len;
+	if (length == 0)
+	{
+		free(buffer);
+		return 0;
+	}
+
+	*dest = buffer;
+	return (int)length;
 }
 
 int input_get_str(char** dest, char *prompt)
@@ -131,6 +128,7 @@ int input_get_str(char** dest, char *prompt)
 		else
 		{
 			error_log("Input contains non-ascii characters.");
+			free(input);
 			return -1;
 		}
 	}

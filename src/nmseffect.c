@@ -16,11 +16,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <ctype.h>
 #include <time.h>
 #include <locale.h>
 #include <wchar.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include "nmseffect.h"
 #include "nmstermio.h"
 #include "nmscharset.h"
@@ -49,6 +52,7 @@ struct charAttr {
 
 // Static function prototypes
 static void nmseffect_sleep(int);
+static int nms_wcwidth(wchar_t);
 
 /*
  * This function applies the data decryption effect to the character
@@ -145,7 +149,7 @@ char nmseffect_exec(unsigned char *string, int string_len) {
 		// Set character column width
 		wchar_t widec[sizeof(list_pointer->source)] = {};
 		mbstowcs(widec, list_pointer->source, sizeof(list_pointer->source));
-		list_pointer->width = wcwidth(*widec);
+		list_pointer->width = nms_wcwidth(*widec);
 		
 		// Set next node to null
 		list_pointer->next = NULL;
@@ -187,7 +191,7 @@ char nmseffect_exec(unsigned char *string, int string_len) {
 	// If autoDecrypt flag is set, we sleep. Otherwise require user to
 	// press a key to continue.
 	if (autoDecrypt)
-		sleep(1);
+		nmseffect_sleep(1000);
 	else
 		nmstermio_get_char();
 
@@ -351,10 +355,32 @@ void nmseffect_set_color(int setting) {
  * Sleep for the number of milliseconds indicated by argument 't'.
  */
 static void nmseffect_sleep(int t) {
+#ifdef _WIN32
+	Sleep((DWORD)t);
+#else
 	struct timespec ts;
 	
 	ts.tv_sec = t / 1000;
 	ts.tv_nsec = (t % 1000) * 1000000;
 	
 	nanosleep(&ts, NULL);
+#endif
+}
+
+static int nms_wcwidth(wchar_t wc) {
+#ifdef _WIN32
+	int len = WideCharToMultiByte(CP_UTF8, 0, &wc, 1, NULL, 0, NULL, NULL);
+	if (len <= 0)
+	{
+		return 1;
+	}
+	return (len > 1) ? 2 : 1;
+#else
+	int width = wcwidth(wc);
+	if (width < 0)
+	{
+		return 1;
+	}
+	return width;
+#endif
 }

@@ -8,7 +8,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
 #include <sys/ioctl.h>
+#endif
+
 #include "nmseffect.h"
 
 int main(void) {
@@ -30,14 +37,23 @@ int main(void) {
 	char *foot1Center    = "================================================================";
 	char *foot2Center    = "[ ] Select Option or ESC to Abort";
 
-	// Get terminal dimentions (needed for centering)
+	// Get terminal dimensions (needed for centering)
+#ifdef _WIN32
+	CONSOLE_SCREEN_BUFFER_INFO info;
+	if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &info)) {
+		fprintf(stderr, "Input not from an interactive terminal\n");
+		return 1;
+	}
+	termCols = info.srWindow.Right - info.srWindow.Left + 1;
+#else
 	struct winsize w;
-    // if not an interactive tty, w is not populated, resulting in UB
+	// if not an interactive tty, w is not populated, resulting in UB
 	if (ioctl(0, TIOCGWINSZ, &w) == -1) {
-        perror("Input not from an interactive terminal");
-        return 1;
-    }
+		perror("Input not from an interactive terminal");
+		return 1;
+	}
 	termCols = w.ws_col;
+#endif
 
 	// Allocate space for our display string
 	if ((display = malloc(20 * termCols)) == NULL)

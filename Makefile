@@ -15,23 +15,40 @@ SRC=src
 CC ?= gcc
 CFLAGS ?= -Wextra -Wall -O2
 
-.PHONY: all install uninstall clean
+ifeq ($(OS),Windows_NT)
+	EXEEXT=.exe
+	TERMIO_SRC=nmstermio_win
+	PLATFORM_LIBS=-lkernel32 -luser32
+else
+	EXEEXT=
+	TERMIO_SRC=nmstermio
+	PLATFORM_LIBS=
+endif
 
-nms: $(OBJ)/input.o $(OBJ)/error.o $(OBJ)/nmscharset.o $(OBJ)/nmstermio.o $(OBJ)/nmseffect.o $(OBJ)/nms.o | $(BIN)
-	$(CC) $(CFLAGS) -o $(BIN)/$@ $^
+NMS_EXE=$(BIN)/nms$(EXEEXT)
+SNEAKERS_EXE=$(BIN)/sneakers$(EXEEXT)
 
-sneakers: $(OBJ)/nmscharset.o $(OBJ)/nmstermio.o $(OBJ)/nmseffect.o $(OBJ)/sneakers.o | $(BIN)
-	$(CC) $(CFLAGS) -o $(BIN)/$@ $^
+.PHONY: all install uninstall clean nms sneakers all-ncurses nms-ncurses sneakers-ncurses
 
 all: nms sneakers
 
+nms: $(NMS_EXE)
+
+sneakers: $(SNEAKERS_EXE)
+
 all-ncurses: nms-ncurses sneakers-ncurses
 
+$(NMS_EXE): $(OBJ)/input.o $(OBJ)/error.o $(OBJ)/nmscharset.o $(OBJ)/$(TERMIO_SRC).o $(OBJ)/nmseffect.o $(OBJ)/nms.o | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ $(PLATFORM_LIBS)
+
+$(SNEAKERS_EXE): $(OBJ)/nmscharset.o $(OBJ)/$(TERMIO_SRC).o $(OBJ)/nmseffect.o $(OBJ)/sneakers.o | $(BIN)
+	$(CC) $(CFLAGS) -o $@ $^ $(PLATFORM_LIBS)
+
 nms-ncurses: $(OBJ)/input.o $(OBJ)/error.o $(OBJ)/nmscharset.o $(OBJ)/nmstermio_ncurses.o $(OBJ)/nmseffect.o $(OBJ)/nms.o | $(BIN)
-	$(CC) $(CFLAGS) -o $(BIN)/nms $^ -lncursesw
+	$(CC) $(CFLAGS) -o $(NMS_EXE) $^ -lncursesw
 
 sneakers-ncurses: $(OBJ)/nmscharset.o $(OBJ)/nmstermio_ncurses.o $(OBJ)/nmseffect.o $(OBJ)/sneakers.o | $(BIN)
-	$(CC) $(CFLAGS) -o $(BIN)/sneakers $^ -lncursesw
+	$(CC) $(CFLAGS) -o $(SNEAKERS_EXE) $^ -lncursesw
 
 $(OBJ)/%.o: $(SRC)/%.c | $(OBJ)
 	$(CC) $(CFLAGS) -o $@ -c $<
