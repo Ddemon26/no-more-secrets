@@ -60,6 +60,23 @@ $ make sneakers             ## Optional
 $ sudo make install
 ```
 
+#### Build with Zig (cross-platform alternative)
+
+If you have [Zig](https://ziglang.org/) 0.15.1 or newer installed, you can use
+the provided `build.zig` script instead of `make`. This approach is handy on
+Windows because it uses Zig's bundled C toolchain and the native Windows
+terminal backend.
+
+```
+$ git clone https://github.com/bartobri/no-more-secrets.git
+$ cd ./no-more-secrets
+$ zig build                 # builds nms and sneakers into zig-out/bin
+$ zig build run-nms -- -v   # optional helpers for quick testing
+```
+
+The resulting executables are placed in `zig-out/bin`. You can copy them to a
+preferred location or prepend that directory to your `PATH`.
+
 #### Uninstall:
 
 ```
